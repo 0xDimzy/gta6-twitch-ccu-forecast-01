@@ -22,7 +22,10 @@ to any launch, and no practice answer is memorised):
     launches instead of extrapolating a fitted slope past the data.
 5.  Quantiles from the regression residuals: q_tau = p1 * exp(med + z_tau *
     sigma), sigma the residual spread, shrunk x0.8 (the raw residual spread
-    is wider than the pinball-optimal spread on the practice cases).
+    is wider than the pinball-optimal spread on the practice cases) and
+    pooled halfway toward the median spread across hours (each hour's
+    regression rests on only ~8 launches, so its own residual spread is
+    noisy; pooling stabilises it).
 
 Fallbacks: if fewer than 8 usable launches survive the filter for an hour,
 that hour falls back to the house persistence shape (spread widening like
@@ -55,6 +58,10 @@ Z = [-1.6448536269514722, -0.6744897501960817, 0.0,
 FALLBACK_SIGMA = 0.15
 # Residual spread is wider than pinball-optimal; shrink it.
 SPREAD_SHRINK = 0.8
+# Each hour's residual spread is pooled halfway toward the median spread
+# across hours: with ~8 launches per regression, a single hour's spread
+# estimate is noisy. 0.0 = fully pooled, 1.0 = per-hour only.
+SPREAD_POOL_WEIGHT = 0.5
 # Minimum usable launches for the per-hour regression.
 MIN_LAUNCHES = 8
 
@@ -152,22 +159,36 @@ def forecast_case(case):
                 pairs[h].append((log_base, math.log(day[h] / day[1])))
 
     hours = []
+    # First pass: fit every hour, keeping (median log-ratio, residual
+    # spread); hours with too few usable launches fall back to persistence.
+    fitted = {}
     for row in case["forecast"]:
         h = row["hour"]
         pts = pairs[h]
-        if len(pts) >= MIN_LAUNCHES:
-            xs = [p[0] for p in pts]
-            lo, hi = min(xs), max(xs)
-            # No extrapolation past the observed scale: a launch bigger
-            # than anything in the set takes the biggest launches' shape.
-            eff = min(max(log_p1, lo), hi)
-            mx, my, slope, sigma = fit_hour(pts)
-            med = my + slope * (eff - mx)
-            sig = sigma * SPREAD_SHRINK
-            qs = [round2(p1 * math.exp(med + z * sig)) for z in Z]
-        else:
+        if len(pts) < MIN_LAUNCHES:
+            fitted[h] = None
+            continue
+        xs = [p[0] for p in pts]
+        lo, hi = min(xs), max(xs)
+        # No extrapolation past the observed scale: a launch bigger
+        # than anything in the set takes the biggest launches' shape.
+        eff = min(max(log_p1, lo), hi)
+        mx, my, slope, sigma = fit_hour(pts)
+        fitted[h] = (my + slope * (eff - mx), sigma)
+    # Pool the spreads: the median residual spread across fitted hours.
+    spreads = [v[1] for v in fitted.values() if v is not None]
+    pooled = statistics.median(spreads) if spreads else 0.3
+    for row in case["forecast"]:
+        h = row["hour"]
+        fit = fitted[h]
+        if fit is None:
             qs = [round2(p1 * math.exp(z * FALLBACK_SIGMA * math.sqrt(h - 1)))
                   for z in Z]
+        else:
+            med, sigma = fit
+            sig = (SPREAD_POOL_WEIGHT * sigma
+                   + (1 - SPREAD_POOL_WEIGHT) * pooled) * SPREAD_SHRINK
+            qs = [round2(p1 * math.exp(med + z * sig)) for z in Z]
         for i in range(1, 5):
             qs[i] = max(qs[i], qs[i - 1])
         hours.append({"hour": h, "q": qs})

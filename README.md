@@ -35,10 +35,10 @@ same case write the same bytes.
 ## Practice check (honest, no memorised answers)
 
 Scored against the practice cases' SullyGnome hourly counts (the kit's own
-source), this model averages a pinball loss of ~0.164 over the four practice
+source), this model averages a pinball loss of ~0.161 over the four practice
 launches, against ~0.387 for the house baseline (persistence). Per launch:
-Wolverine 0.194, Red Dead Redemption 2 0.118, God of War Ragnarök 0.117,
-Spider-Man 2 0.229.
+Wolverine 0.192, Red Dead Redemption 2 0.116, God of War Ragnarök 0.117,
+Spider-Man 2 0.220.
 
 ## Run
 
